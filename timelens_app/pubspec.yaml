@@ -1,0 +1,44 @@
+name: timelens
+description: 时光镜 — 跨平台屏幕时间管理工具
+publish_to: 'none'
+version: 0.0.1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # HTTP 客户端
+  dio: ^5.4.0
+  
+  # 状态管理
+  flutter_riverpod: ^2.4.9
+  riverpod_annotation: ^2.3.3
+  
+  # 图表
+  fl_chart: ^0.68.0
+  
+  # Windows Fluent Design
+  fluent_ui: ^4.8.0
+  
+  # 窗口管理 (悬浮窗/置顶)
+  window_manager: ^0.3.7
+  
+  # 工具
+  intl: ^0.19.0
+  freezed_annotation: ^2.4.1
+  json_annotation: ^4.8.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  build_runner: ^2.4.7
+  freezed: ^2.4.6
+  json_serializable: ^6.7.1
+  riverpod_generator: ^2.3.9
+
+flutter:
+  uses-material-design: true
