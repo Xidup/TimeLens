@@ -1,6 +1,6 @@
 # 时光镜 TimeLens — 架构设计文档
 
-> 版本 0.0.8  |  2026-05-31  |  状态：Phase 1 进行中 (9/11)
+> 版本 0.0.9  |  2026-05-31  |  状态：Phase 1 进行中 (10/11)
 
 ---
 
@@ -540,7 +540,7 @@ Android 手机端数据流：
 │              · 滑块编辑对话框（绿→黄/黄→红 双阈值）
 │              · 颜色预览 + 添加/恢复默认规则
 │              · TimerService.updateConfigs() 运行时更新
-├── Task 1.10 Dashboard 图表 (fl_chart 饼图 + 柱状图)         [ ]
+├── Task 1.10 Dashboard 图表 (fl_chart 饼图 + 柱状图)         [✅ 已完成]
 └── Task 1.11 真机调试 + 与 aw-server 联调                   [ ]
 ```
 
