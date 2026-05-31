@@ -1,60 +1,68 @@
-/// 悬浮计时窗 — 前台应用使用时间实时显示
+/// 悬浮计时窗 — FPS 透明风格
 ///
-/// mm:ss 格式，三档阈值颜色：
-/// - 绿色 (0-30m)：安全使用
-/// - 黄色 (30-60m)：注意休息
-/// - 红色 (>60m)：超时警告
+/// 显示当前前台应用名和今日累计时长 (mm:ss)。
+/// 背景透明，仅计时数字颜色随阈值变化：
+/// - 绿色 #66BB6A (0-30m)
+/// - 黄色 #F9A825 (30-60m)
+/// - 红色 #EF5350 (>60m)
 ///
-/// 在 Windows 上作为独立顶层窗口运行。
-/// FPS 透明风格视觉由 Task 1.5 实现。
+/// 视觉规格（决策 8）：
+/// - 背景：透明（可配透明度），圆角 6px
+/// - 应用名：白色 70%，11sp
+/// - 计时数字：等宽字体，字间距 2px
+/// - 桌面时隐藏（由 TimerService pause/resume 控制）
 library;
 
 import 'package:flutter/material.dart';
 import '../../core/timer_service.dart';
 
-/// 悬浮计时窗
+/// FPS 风格悬浮计时窗
 ///
-/// 显示当前应用名称和今日使用时长。
-/// 背景色根据阈值自动切换：
-/// - 绿色: ≤ 30 分钟
-/// - 黄色: 30～60 分钟
-/// - 红色: > 60 分钟
+/// [backgroundOpacity] 保留为 UI 接口，后续设置页可调。
 class OverlayWindow extends StatelessWidget {
   final TimerState state;
 
-  const OverlayWindow({super.key, required this.state});
+  /// 背景透明度 0.0~1.0，0 = 全透明（默认），1 = 全黑
+  final double backgroundOpacity;
+
+  const OverlayWindow({
+    super.key,
+    required this.state,
+    this.backgroundOpacity = 0.0,
+  });
 
   @override
   Widget build(BuildContext context) {
     final threshold = state.threshold;
-    final bgColor = _bgColorFor(threshold);
-    final indicatorColor = _indicatorColorFor(threshold);
+    final textColor = _textColorFor(threshold);
 
     return Container(
       decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: Colors.black.withValues(alpha: backgroundOpacity),
+        borderRadius: BorderRadius.circular(6),
+        boxShadow: backgroundOpacity > 0.05
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           // 应用图标
           Icon(
             _appIcon(state.appName),
-            color: Colors.white70,
-            size: 18,
+            color: Colors.white.withValues(alpha: 0.7),
+            size: 16,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
 
-          // 应用名 + 计时
+          // 应用名 + 计时数字
           Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -62,17 +70,17 @@ class OverlayWindow extends StatelessWidget {
               Text(
                 state.appName.isEmpty ? '--' : state.appName,
                 style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 11,
+                  color: Color(0xB3FFFFFF), // 白色 70%
+                  fontSize: 10,
                   fontWeight: FontWeight.w400,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
               Text(
                 state.formatted,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 28,
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 24,
                   fontWeight: FontWeight.w700,
                   fontFamily: 'monospace',
                   letterSpacing: 2,
@@ -80,49 +88,24 @@ class OverlayWindow extends StatelessWidget {
               ),
             ],
           ),
-
-          // 阈值指示器（黄色和红色时显示）
-          if (threshold != TimerThreshold.green) ...[
-            const SizedBox(width: 8),
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: indicatorColor,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
 
-  /// 阈值 → 背景色
-  Color _bgColorFor(TimerThreshold t) {
-    switch (t) {
-      case TimerThreshold.green:
-        return const Color(0xFF2E7D32); // Material Green 800
-      case TimerThreshold.yellow:
-        return const Color(0xFFF57F17); // Material Yellow 900
-      case TimerThreshold.red:
-        return const Color(0xFFC62828); // Material Red 800
-    }
-  }
-
-  /// 阈值 → 指示器颜色
-  Color _indicatorColorFor(TimerThreshold t) {
+  /// 阈值 → 文字颜色
+  Color _textColorFor(TimerThreshold t) {
     switch (t) {
       case TimerThreshold.green:
         return const Color(0xFF66BB6A);
       case TimerThreshold.yellow:
-        return const Color(0xFFFFEB3B); // Yellow accent
+        return const Color(0xFFF9A825);
       case TimerThreshold.red:
-        return Colors.white;
+        return const Color(0xFFEF5350);
     }
   }
 
-  /// 根据应用名返回图标
+  /// 应用名 → 图标
   IconData _appIcon(String appName) {
     final lower = appName.toLowerCase();
     if (lower.contains('chrome') ||
@@ -147,7 +130,7 @@ class OverlayWindow extends StatelessWidget {
   }
 }
 
-/// 全屏覆盖模式 — 用于在主窗口中以内嵌方式显示计时器
+/// 内嵌模式 — Dashboard 中预览悬浮窗外观
 class InlineTimer extends StatelessWidget {
   final TimerState state;
 
@@ -156,7 +139,7 @@ class InlineTimer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: OverlayWindow(state: state),
+      child: OverlayWindow(state: state, backgroundOpacity: 0.4),
     );
   }
 }
