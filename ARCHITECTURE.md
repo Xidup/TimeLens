@@ -1,6 +1,6 @@
 # 时光镜 TimeLens — 架构设计文档
 
-> 版本 0.0.4  |  2026-05-31  |  状态：Phase 1 进行中 (5/11)
+> 版本 0.0.5  |  2026-05-31  |  状态：Phase 1 进行中 (6/11)
 
 ---
 
@@ -517,7 +517,11 @@ Android 手机端数据流：
 ├── Task 1.5  OverlayWindow — FPS 透明悬浮窗                 [✅ 已完成]
 │              · 透明背景（可配 backgroundOpacity 接口）
 │              · 仅文字颜色随阈值变化 · 圆角 6px · 去阈值指示点
-├── Task 1.6  WindowManager — Mini 模式切换                  [ ]
+├── Task 1.6  WindowManager — Mini 模式切换                 [✅ 已完成]
+│              · onModeChanged 回调（联动外部组件）
+│              · 幂等保护（重复调用无害）
+│              · 桌面检测集成（explorer.exe → 自动暂停）
+│              · Mini 模式桌面时悬浮窗自动隐藏
 ├── Task 1.7  main.dart — 应用入口 + 模式路由                [ ]
 ├── Task 1.8  悬浮窗交互 (拖动/长按锁定/双击/右键菜单)         [ ]
 ├── Task 1.9  每应用阈值配置 (AppThresholdConfig + 设置UI)    [ ]

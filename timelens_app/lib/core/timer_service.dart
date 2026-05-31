@@ -6,6 +6,11 @@
 /// - 切换时丢弃本地计数，从 API 读取新应用今日累计作为新起点
 /// - 不做校准，几秒误差可忽略
 ///
+/// **桌面检测（决策 7/8）**：
+/// - 当 aw-server 报告 explorer.exe 或无焦点窗口时自动暂停计时
+/// - Mini 模式下悬浮窗随之隐藏
+/// - 应用切回前台时自动恢复
+///
 /// **阈值（决策 8）**：
 /// - 三档：绿(0-30m) / 黄(30-60m) / 红(>60m)
 /// - 支持每应用自定义阈值规则（[AppThresholdConfig]）
@@ -81,6 +86,15 @@ class TimerService {
 
   /// 检测间隔
   static const _detectInterval = Duration(seconds: 5);
+
+  /// 桌面应用名模式（aw-watcher-window 无焦点窗口时报告的值）
+  static const _desktopPatterns = [
+    'explorer.exe',
+    'applicationframehost.exe',
+    'shellexperiencehost.exe',
+    'searchapp.exe',
+    'systemsettings.exe',
+  ];
 
   // ── 回调 ──────────────────────────────────────────
 
@@ -164,6 +178,7 @@ class TimerService {
   /// 每 5 秒检测窗口是否切换
   ///
   /// 同一应用 → 不做任何操作（Timer 继续跑）
+  /// 切到桌面 → 暂停计时 + 清空应用名（Mini 模式下悬浮窗隐藏）
   /// 切换应用 → 丢弃本地计数 → 从 API 读取新应用今日累计
   Future<void> _onDetect() async {
     try {
@@ -176,11 +191,23 @@ class TimerService {
       final latest = events.last;
       final newApp = latest.app;
 
-      // 同一应用 — 不操作
+      // ── 桌面检测：暂停计时 ──
+      if (_isDesktopApp(newApp)) {
+        // 已在桌面 → 不重复通知
+        if (_currentApp.isEmpty) return;
+        _sessionSeconds = 0;
+        _currentApp = '';
+        _paused = true;
+        onStateChanged?.call(state);
+        return;
+      }
+
+      // ── 同一应用 — 不操作 ──
       if (newApp == _currentApp) return;
 
-      // 应用切换 — 丢弃本地计数
+      // ── 应用切换 — 丢弃本地计数，恢复暂停 ──
       _sessionSeconds = 0;
+      _paused = false; // 从桌面恢复时也要重置
       _currentApp = newApp;
 
       // 从 API 读取新应用的今日累计
@@ -190,6 +217,12 @@ class TimerService {
     } catch (_) {
       // 静默处理检测错误（aw-server 可能暂时不可用）
     }
+  }
+
+  /// 判断是否为桌面应用（无焦点窗口时 aw-server 报告的值）
+  bool _isDesktopApp(String appName) {
+    final lower = appName.toLowerCase();
+    return _desktopPatterns.any((p) => lower.startsWith(p));
   }
 
   // ── 内部：API 交互 ────────────────────────────────

@@ -85,6 +85,18 @@ class _TimeLensAppState extends State<TimeLensApp> {
     widget.timerService.onStateChanged = (_) {
       if (mounted) setState(() {});
     };
+
+    // 模式切换回调：后续 Task 1.7/1.8 可在此处联动
+    widget.windowManager.onModeChanged = (newMode) {
+      // 保留扩展点：切到 Mini 时 TimerService 桌面检测自动暂停
+      // 切回 Dashboard 时无需特殊处理（TimerService 独立运行）
+    };
+  }
+
+  @override
+  void dispose() {
+    widget.windowManager.dispose();
+    super.dispose();
   }
 
   @override
@@ -132,6 +144,10 @@ class _TimeLensAppState extends State<TimeLensApp> {
 }
 
 /// Mini 模式视图 — 悬浮计时窗 + 双击返回
+///
+/// - 检测到桌面时（appName 为空）悬浮窗自动隐藏
+/// - 应用切回前台时自动重新显示
+/// - 双击回到 Dashboard 模式
 class _MiniModeView extends StatelessWidget {
   final TimerState state;
   final VoidCallback onBack;
@@ -140,6 +156,11 @@ class _MiniModeView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 桌面/锁屏时隐藏悬浮窗
+    if (state.appName.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     return GestureDetector(
       onDoubleTap: onBack,
       child: Scaffold(
