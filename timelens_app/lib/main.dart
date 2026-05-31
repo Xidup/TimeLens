@@ -30,7 +30,7 @@ void main() async {
   // 检查 aw-server 是否运行
   final serverRunning = await client.isServerRunning();
 
-  // 启动计时器轮询
+  // 启动计时器轮询（供悬浮窗使用）
   timerService.start();
 
   runApp(TimeLensApp(
@@ -115,7 +115,6 @@ class _TimeLensAppState extends State<TimeLensApp> {
             )
           : DashboardPage(
               client: widget.client,
-              timerService: widget.timerService,
               onToggleMini: _switchToMini,
             ),
     );
