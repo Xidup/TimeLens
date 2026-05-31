@@ -35,14 +35,21 @@ class AppUsage {
 }
 
 /// Dashboard 页面
+///
+/// [initialServerRunning] 用于初始 UI 状态：当已知服务器未运行时，
+/// 直接显示"未连接"状态，避免先闪烁"加载中"再切换到断开状态。
 class DashboardPage extends StatefulWidget {
   final AWClient client;
   final VoidCallback? onToggleMini;
+
+  /// 初始服务器连接状态（由 main.dart 在启动时检测）
+  final bool initialServerRunning;
 
   const DashboardPage({
     super.key,
     required this.client,
     this.onToggleMini,
+    this.initialServerRunning = true,
   });
 
   @override
@@ -66,6 +73,13 @@ class _DashboardPageState extends State<DashboardPage>
     if (Platform.isWindows) {
       windowManager.addListener(this);
     }
+
+    // 已知服务器未运行 → 直接显示断开状态，不闪"加载中"
+    if (!widget.initialServerRunning) {
+      _loading = false;
+      _connectionStatus = _ConnectionStatus.disconnected;
+    }
+
     _loadData();
   }
 

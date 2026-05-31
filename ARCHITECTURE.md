@@ -1,6 +1,6 @@
 # 时光镜 TimeLens — 架构设计文档
 
-> 版本 0.0.5  |  2026-05-31  |  状态：Phase 1 进行中 (6/11)
+> 版本 0.0.6  |  2026-05-31  |  状态：Phase 1 进行中 (7/11)
 
 ---
 
@@ -522,7 +522,11 @@ Android 手机端数据流：
 │              · 幂等保护（重复调用无害）
 │              · 桌面检测集成（explorer.exe → 自动暂停）
 │              · Mini 模式桌面时悬浮窗自动隐藏
-├── Task 1.7  main.dart — 应用入口 + 模式路由                [ ]
+├── Task 1.7  main.dart — 应用入口 + 模式路由               [✅ 已完成]
+│              · 平台自适应：Windows=FluentApp, 其他=MaterialApp
+│              · serverRunning 联动初始 UI（消除加载闪烁）
+│              · onModeChanged 实装（模式切换自动同步状态）
+│              · 提取 _buildHome() 统一路由逻辑
 ├── Task 1.8  悬浮窗交互 (拖动/长按锁定/双击/右键菜单)         [ ]
 ├── Task 1.9  每应用阈值配置 (AppThresholdConfig + 设置UI)    [ ]
 ├── Task 1.10 Dashboard 图表 (fl_chart 饼图 + 柱状图)         [ ]
