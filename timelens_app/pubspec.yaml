@@ -25,6 +25,9 @@ dependencies:
   
   # 窗口管理 (悬浮窗/置顶)
   window_manager: ^0.3.7
+
+  # 系统托盘
+  tray_manager: ^0.2.0
   
   # 工具
   intl: ^0.20.0
@@ -42,3 +45,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/tray_icon.ico

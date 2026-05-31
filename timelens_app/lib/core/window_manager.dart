@@ -4,16 +4,28 @@
 /// 1. **Dashboard 模式**：完整主面板窗口
 /// 2. **Mini 模式**：缩小为悬浮计时器，置顶无边框
 ///
-/// 通过 [onModeChanged] 回调通知外部组件模式变化，
-/// 用于联动 TimerService 的桌面检测暂停/恢复。
+/// Mini 模式悬浮窗固定在屏幕角落，锁定不可交互。
+/// 通过系统托盘菜单返回 Dashboard。
+///
+/// 通过 [onModeChanged] 回调通知外部组件模式变化。
 library;
 
 import 'dart:io' show Platform;
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// 窗口模式
 enum WindowMode { dashboard, mini }
+
+/// 悬浮窗屏幕位置
+enum OverlayPosition {
+  topLeft,
+  topRight,
+  bottomLeft,
+  bottomRight,
+}
 
 /// Windows 窗口管理器封装
 ///
@@ -23,7 +35,16 @@ class TimeLensWindowManager {
   static const _dashboardSize = Size(400, 700);
   static const _miniSize = Size(220, 60);
 
+  /// 悬浮窗距屏幕边缘的间距（逻辑像素）
+  static const _edgeMargin = 8.0;
+
+  /// 底部预留高度（避开任务栏，典型 48px）
+  static const _bottomReserve = 48.0;
+
   WindowMode _mode = WindowMode.dashboard;
+
+  /// 悬浮窗位置（默认左下角）
+  OverlayPosition _overlayPosition = OverlayPosition.bottomLeft;
 
   /// 当前模式
   WindowMode get mode => _mode;
@@ -31,9 +52,12 @@ class TimeLensWindowManager {
   /// 是否处于 Mini 悬浮窗模式
   bool get isMini => _mode == WindowMode.mini;
 
+  /// 当前悬浮窗位置
+  OverlayPosition get overlayPosition => _overlayPosition;
+
   // ── 回调 ──────────────────────────────────────────
 
-  /// 模式切换回调（切换完成后调用，含初始模式）
+  /// 模式切换回调（切换完成后调用）
   ///
   /// 用于联动 TimerService、Dashboard 等组件。
   void Function(WindowMode newMode)? onModeChanged;
@@ -43,16 +67,19 @@ class TimeLensWindowManager {
   /// 切换到 Mini 悬浮窗模式
   ///
   /// 幂等：已是 Mini 模式则跳过。
+  /// 根据 [overlayPosition] 计算屏幕坐标。
   /// 完成后调用 [onModeChanged]。
   Future<void> switchToMini() async {
     if (!Platform.isWindows) return;
     if (_mode == WindowMode.mini) return; // 幂等
     _mode = WindowMode.mini;
+
     await windowManager.setSize(_miniSize);
-    await windowManager.setPosition(const Offset(16, 16)); // 默认左上角
+    await windowManager.setPosition(_calculateOffset());
     await windowManager.setAlwaysOnTop(true);
     await windowManager.setSkipTaskbar(true);
     await windowManager.setTitleBarStyle(TitleBarStyle.hidden);
+
     onModeChanged?.call(_mode);
   }
 
@@ -64,12 +91,14 @@ class TimeLensWindowManager {
     if (!Platform.isWindows) return;
     if (_mode == WindowMode.dashboard) return; // 幂等
     _mode = WindowMode.dashboard;
+
     await windowManager.setSize(_dashboardSize);
     await windowManager.center();
     await windowManager.setAlwaysOnTop(false);
     await windowManager.setSkipTaskbar(false);
     await windowManager.setTitleBarStyle(TitleBarStyle.normal);
     await windowManager.setTitle('时光镜');
+
     onModeChanged?.call(_mode);
   }
 
@@ -79,6 +108,43 @@ class TimeLensWindowManager {
       await switchToMini();
     } else {
       await switchToDashboard();
+    }
+  }
+
+  // ── 位置管理 ──────────────────────────────────────
+
+  /// 设置悬浮窗位置并立即更新
+  ///
+  /// 供系统托盘菜单调用。
+  Future<void> setOverlayPosition(OverlayPosition position) async {
+    _overlayPosition = position;
+    if (_mode == WindowMode.mini) {
+      await windowManager.setPosition(_calculateOffset());
+    }
+  }
+
+  /// 计算当前 [overlayPosition] 对应的屏幕坐标
+  Offset _calculateOffset() {
+    // 获取主屏幕逻辑分辨率
+    final view = ui.PlatformDispatcher.instance.views.first;
+    final screenW = view.physicalSize.width / view.devicePixelRatio;
+    final screenH = view.physicalSize.height / view.devicePixelRatio;
+
+    switch (_overlayPosition) {
+      case OverlayPosition.topLeft:
+        return const Offset(_edgeMargin, _edgeMargin);
+      case OverlayPosition.topRight:
+        return Offset(screenW - _miniSize.width - _edgeMargin, _edgeMargin);
+      case OverlayPosition.bottomLeft:
+        return Offset(
+          _edgeMargin,
+          screenH - _miniSize.height - _bottomReserve - _edgeMargin,
+        );
+      case OverlayPosition.bottomRight:
+        return Offset(
+          screenW - _miniSize.width - _edgeMargin,
+          screenH - _miniSize.height - _bottomReserve - _edgeMargin,
+        );
     }
   }
 

@@ -4,15 +4,21 @@
 /// 和 Windows (Fluent UI) 双端支持。
 ///
 /// **平台自适应**：
-/// - Windows: FluentApp (`fluent_ui`) — Windows 11 风格
-/// - Android/Linux/macOS: MaterialApp — Material Design 3 暗色主题
+/// - Windows: FluentApp (`fluent_ui`) + 系统托盘
+/// - Android/Linux/macOS: MaterialApp
+///
+/// **Mini 模式**：
+/// - 悬浮窗锁定在屏幕角落，无交互（双击/拖动/右键均不响应）
+/// - 通过系统托盘菜单「打开面板」返回 Dashboard
+/// - 默认位置：左下角
 library;
 
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, exit;
 
 import 'package:flutter/material.dart';
 import 'package:fluent_ui/fluent_ui.dart' as fluent;
 import 'package:window_manager/window_manager.dart';
+import 'package:tray_manager/tray_manager.dart';
 
 import 'core/api_client.dart';
 import 'core/timer_service.dart';
@@ -31,6 +37,7 @@ void main() async {
   final windowMgr = wm.TimeLensWindowManager();
   if (Platform.isWindows) {
     await _initWindowsWindow();
+    await _initTray(windowMgr);
   }
 
   // 初始化服务
@@ -68,6 +75,82 @@ Future<void> _initWindowsWindow() async {
   );
 }
 
+/// 系统托盘初始化
+Future<void> _initTray(wm.TimeLensWindowManager windowMgr) async {
+  await trayManager.setIcon('assets/tray_icon.ico');
+  await trayManager.setToolTip('时光镜');
+  await _updateTrayMenu(windowMgr);
+}
+
+/// 根据当前模式构建托盘菜单
+///
+/// - Mini 模式：显示「打开面板」
+/// - Dashboard 模式：显示「切换到悬浮窗」
+Future<void> _updateTrayMenu(wm.TimeLensWindowManager windowMgr) async {
+  final isMini = windowMgr.isMini;
+
+  final menu = Menu(
+    items: [
+      // ── 主操作 ──
+      if (isMini)
+        MenuItem(
+          label: '打开面板',
+          onClick: (_) => windowMgr.switchToDashboard(),
+        )
+      else
+        MenuItem(
+          label: '切换到悬浮窗',
+          onClick: (_) => windowMgr.switchToMini(),
+        ),
+
+      MenuItem.separator(),
+
+      // ── 悬浮窗位置 ──
+      MenuItem(
+        label: '悬浮窗位置',
+        submenu: Menu(
+          items: [
+            MenuItem(
+              label: '左上角',
+              onClick: (_) =>
+                  windowMgr.setOverlayPosition(wm.OverlayPosition.topLeft),
+            ),
+            MenuItem(
+              label: '右上角',
+              onClick: (_) =>
+                  windowMgr.setOverlayPosition(wm.OverlayPosition.topRight),
+            ),
+            MenuItem(
+              label: '左下角  ✓',
+              onClick: (_) =>
+                  windowMgr.setOverlayPosition(wm.OverlayPosition.bottomLeft),
+            ),
+            MenuItem(
+              label: '右下角',
+              onClick: (_) =>
+                  windowMgr.setOverlayPosition(wm.OverlayPosition.bottomRight),
+            ),
+          ],
+        ),
+      ),
+
+      MenuItem.separator(),
+
+      // ── 退出 ──
+      MenuItem(
+        label: '退出',
+        onClick: (_) async {
+          await trayManager.destroy();
+          // ignore: use_build_context_synchronously — main() context
+          exit(0);
+        },
+      ),
+    ],
+  );
+
+  await trayManager.setContextMenu(menu);
+}
+
 // ══════════════════════════════════════════════════════
 // TimeLensApp — 平台自适应根组件
 // ══════════════════════════════════════════════════════
@@ -102,10 +185,11 @@ class _TimeLensAppState extends State<TimeLensApp> {
       if (mounted) setState(() {});
     };
 
-    // 模式切换回调：同步内部状态 + 通知后续 Task 1.8 交互层
+    // 模式切换 → 同步状态 + 更新托盘菜单
     widget.windowManager.onModeChanged = (newMode) {
       if (!mounted) return;
       setState(() => _mode = newMode);
+      _updateTrayMenu(widget.windowManager);
     };
   }
 
@@ -169,10 +253,7 @@ class _TimeLensAppState extends State<TimeLensApp> {
 
   Widget _buildHome(TimerState state) {
     if (_mode == wm.WindowMode.mini) {
-      return _MiniModeView(
-        state: state,
-        onBack: _switchToDashboard,
-      );
+      return _MiniModeView(state: state);
     }
     return DashboardPage(
       client: widget.client,
@@ -185,28 +266,25 @@ class _TimeLensAppState extends State<TimeLensApp> {
 
   Future<void> _switchToMini() async {
     await widget.windowManager.switchToMini();
-    // setState 由 onModeChanged 回调触发，此处不再重复调用
-  }
-
-  Future<void> _switchToDashboard() async {
-    await widget.windowManager.switchToDashboard();
+    // setState 由 onModeChanged 回调触发
   }
 }
 
 // ══════════════════════════════════════════════════════
-// Mini 模式视图
+// Mini 模式视图 — 锁定悬浮窗
 // ══════════════════════════════════════════════════════
 
-/// Mini 模式视图 — 悬浮计时窗 + 双击返回
+/// Mini 模式视图 — 锁定悬浮计时窗
+///
+/// **无任何交互**：不响应双击、拖动、长按、右键。
+/// 返回 Dashboard 的唯一途径：系统托盘「打开面板」。
 ///
 /// - 检测到桌面时（appName 为空）悬浮窗自动隐藏
 /// - 应用切回前台时自动重新显示
-/// - 双击回到 Dashboard 模式
 class _MiniModeView extends StatelessWidget {
   final TimerState state;
-  final VoidCallback onBack;
 
-  const _MiniModeView({required this.state, required this.onBack});
+  const _MiniModeView({required this.state});
 
   @override
   Widget build(BuildContext context) {
@@ -215,13 +293,10 @@ class _MiniModeView extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    return GestureDetector(
-      onDoubleTap: onBack,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Center(
-          child: OverlayWindow(state: state),
-        ),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Center(
+        child: OverlayWindow(state: state),
       ),
     );
   }
