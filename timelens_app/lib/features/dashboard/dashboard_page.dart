@@ -11,6 +11,7 @@ library;
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../core/api_client.dart';
@@ -32,6 +33,39 @@ class AppUsage {
     return lower.contains('timelens') ||
         lower.contains('flutter') && lower.contains('时光镜');
   }
+}
+
+// ══════════════════════════════════════════════════
+// 图表数据模型（必须在顶层，Dart 不允许类嵌套）
+// ══════════════════════════════════════════════════
+
+/// 排名色渐变：top1 红 → top2 橙 → top3 黄 → ... → 末尾灰
+const _pieColors = [
+  Color(0xFFEF5350), // #1 红
+  Color(0xFFFF7043), // #2 橙
+  Color(0xFFFFA726), // #3 黄
+  Color(0xFF66BB6A), // #4 绿
+  Color(0xFF26C6DA), // #5 青
+  Color(0xFF42A5F5), // #6 蓝
+  Color(0xFFAB47BC), // #7 紫
+  Color(0xFF78909C), // #8+ 灰
+];
+
+/// 饼图扇区数据
+class _PieSlice {
+  final String label;
+  final double percent;
+  final Duration duration;
+  final Color color;
+  final List<String>? mergedApps;
+
+  const _PieSlice({
+    required this.label,
+    required this.percent,
+    required this.duration,
+    required this.color,
+    this.mergedApps,
+  });
 }
 
 /// Dashboard 页面
@@ -71,6 +105,11 @@ class _DashboardPageState extends State<DashboardPage>
   _ConnectionStatus _connectionStatus = _ConnectionStatus.checking;
   DateTime? _lastUpdated;
   bool _loading = true;
+
+  // ── 历史图表数据 ──────────────────────────────────
+  List<DailyTotal> _dailyTotals = [];
+  bool _historyLoading = false;
+  bool _yAxisFixed = true; // true=固定0-480min, false=自适应
 
   // ── 阈值配置 ──────────────────────────────────────
   // 使用父组件传入的配置（支持运行时修改 + 持久化）
@@ -179,11 +218,33 @@ class _DashboardPageState extends State<DashboardPage>
         _connectionStatus = _ConnectionStatus.connected;
         _lastUpdated = DateTime.now();
       });
+
+      // 异步加载历史数据（不阻塞今日数据展示）
+      _loadHistoryData();
     } catch (_) {
       setState(() {
         _loading = false;
         _connectionStatus = _ConnectionStatus.disconnected;
       });
+    }
+  }
+
+  // ── 历史数据 ──────────────────────────────────────
+
+  Future<void> _loadHistoryData() async {
+    if (_historyLoading) return;
+    setState(() => _historyLoading = true);
+
+    try {
+      final totals = await widget.client.getDailyTotals(days: 7);
+      if (mounted) {
+        setState(() {
+          _dailyTotals = totals;
+          _historyLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _historyLoading = false);
     }
   }
 
@@ -337,7 +398,7 @@ class _DashboardPageState extends State<DashboardPage>
       );
     }
 
-    // 已加载有数据：摘要卡片 + 排行列表
+    // 已加载有数据：摘要卡片 + 饼图 + 排行 + 柱状图
     return RefreshIndicator(
       onRefresh: _loadData,
       color: const Color(0xFF0F3460),
@@ -346,10 +407,14 @@ class _DashboardPageState extends State<DashboardPage>
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
           _buildSummaryCard(),
+          const SizedBox(height: 16),
+          _buildPieChart(),
           const SizedBox(height: 20),
           _buildSectionHeader(),
           const SizedBox(height: 10),
           ..._apps.map(_buildAppTile),
+          const SizedBox(height: 20),
+          _buildBarChart(),
           const SizedBox(height: 16),
           _buildThresholdPanel(),
         ],
@@ -605,6 +670,379 @@ class _DashboardPageState extends State<DashboardPage>
     if (diff.inSeconds < 60) return '${diff.inSeconds}秒前';
     if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
     return '${diff.inHours}小时前';
+  }
+
+  // ══════════════════════════════════════════════════
+  // 图表 — 今日饼图 (fl_chart)
+  // ══════════════════════════════════════════════════
+
+  Widget _buildPieChart() {
+    if (_apps.isEmpty) return const SizedBox.shrink();
+
+    final total = _apps.fold<Duration>(
+      Duration.zero,
+      (sum, a) => sum + a.todayTotal,
+    );
+    if (total.inSeconds == 0) return const SizedBox.shrink();
+
+    // 构建扇区数据，<5% 合并
+    final slices = <_PieSlice>[];
+    final mergedApps = <String>[];
+    var mergedDuration = Duration.zero;
+
+    for (var i = 0; i < _apps.length; i++) {
+      final app = _apps[i];
+      final pct = app.todayTotal.inMilliseconds / total.inMilliseconds;
+      if (pct < 0.05) {
+        mergedApps.add(app.appName);
+        mergedDuration += app.todayTotal;
+      } else {
+        slices.add(_PieSlice(
+          label: app.appName,
+          percent: pct,
+          duration: app.todayTotal,
+          color: _pieColors[i.clamp(0, _pieColors.length - 1)],
+        ));
+      }
+    }
+
+    // 合并项
+    if (mergedApps.isNotEmpty) {
+      final mergedPct =
+          mergedDuration.inMilliseconds / total.inMilliseconds;
+      slices.add(_PieSlice(
+        label: '其他',
+        percent: mergedPct,
+        duration: mergedDuration,
+        color: _pieColors.last,
+        mergedApps: mergedApps,
+      ));
+    }
+
+    // 计算图表高度（最多 300px）
+    final chartHeight = (slices.length * 44.0).clamp(180.0, 300.0);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF16213E),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 标题
+          const Row(
+            children: [
+              Icon(Icons.pie_chart, color: Colors.white54, size: 16),
+              SizedBox(width: 8),
+              Text(
+                '今日时间分布',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // 饼图 + 图例
+          SizedBox(
+            height: chartHeight,
+            child: Row(
+              children: [
+                // 饼图本体
+                Expanded(
+                  flex: 3,
+                  child: PieChart(
+                    PieChartData(
+                      sections: slices.map((s) {
+                        return PieChartSectionData(
+                          value: s.percent * 100,
+                          color: s.color,
+                          radius: 50,
+                          title: '${(s.percent * 100).round()}%',
+                          titleStyle: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          badgeWidget: s.mergedApps != null
+                              ? Tooltip(
+                                  message: s.mergedApps!.join('\n'),
+                                  child: const Icon(Icons.info_outline,
+                                      size: 14, color: Colors.white38),
+                                )
+                              : null,
+                        );
+                      }).toList(),
+                      sectionsSpace: 2,
+                      centerSpaceRadius: 0,
+                      pieTouchData: PieTouchData(
+                        touchCallback: (event, response) {},
+                      ),
+                    ),
+                  ),
+                ),
+                // 图例
+                Expanded(
+                  flex: 3,
+                  child: ListView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: slices.map((s) {
+                      final mins = s.duration.inMinutes;
+                      final timeStr = mins >= 60
+                          ? '${mins ~/ 60}h${mins % 60}m'
+                          : '${mins}m';
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: s.color,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                s.label,
+                                style: const TextStyle(
+                                  color: Colors.white60,
+                                  fontSize: 11,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text(
+                              timeStr,
+                              style: const TextStyle(
+                                color: Colors.white38,
+                                fontSize: 10,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════
+  // 图表 — 近 7 天柱状图 (fl_chart)
+  // ══════════════════════════════════════════════════
+
+  Widget _buildBarChart() {
+    if (_historyLoading && _dailyTotals.isEmpty) {
+      return Container(
+        height: 220,
+        decoration: BoxDecoration(
+          color: const Color(0xFF16213E),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Color(0xFF0F3460),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_dailyTotals.isEmpty) return const SizedBox.shrink();
+
+    // 计算 Y 轴上限
+    final maxMinutes = _dailyTotals
+        .map((d) => d.totalMinutes)
+        .reduce((a, b) => a > b ? a : b);
+    final yMax = _yAxisFixed
+        ? 480.0
+        : (maxMinutes * 1.15).clamp(60.0, 960.0);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF16213E),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 标题 + 切换按钮
+          Row(
+            children: [
+              const Icon(Icons.bar_chart, color: Colors.white54, size: 16),
+              const SizedBox(width: 8),
+              const Text(
+                '近 7 天趋势',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const Spacer(),
+              // Y 轴切换
+              GestureDetector(
+                onTap: () => setState(() => _yAxisFixed = !_yAxisFixed),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _yAxisFixed
+                        ? const Color(0xFF0F3460).withValues(alpha: 0.4)
+                        : Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    _yAxisFixed ? '固定' : '自适应',
+                    style: TextStyle(
+                      color: _yAxisFixed
+                          ? const Color(0xFF42A5F5)
+                          : Colors.white38,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // 柱状图
+          SizedBox(
+            height: 180,
+            child: BarChart(
+              BarChartData(
+                alignment: BarChartAlignment.spaceAround,
+                maxY: yMax,
+                minY: 0,
+                barGroups: _dailyTotals.map((d) {
+                  return BarChartGroupData(
+                    x: d.date.weekday - 1,
+                    barRods: [
+                      BarChartRodData(
+                        toY: d.totalMinutes.toDouble(),
+                        color: const Color(0xFF0F3460),
+                        width: 20,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(4),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+                titlesData: FlTitlesData(
+                  show: true,
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 28,
+                      getTitlesWidget: (value, meta) {
+                        const days = [
+                          '周一', '周二', '周三', '周四',
+                          '周五', '周六', '周日',
+                        ];
+                        final idx = value.toInt();
+                        if (idx < 0 || idx >= 7) {
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            days[idx],
+                            style: const TextStyle(
+                              color: Colors.white38,
+                              fontSize: 10,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 36,
+                      interval: _yAxisFixed ? 120 : null,
+                      getTitlesWidget: (value, meta) {
+                        final mins = value.toInt();
+                        final label = mins >= 60
+                            ? '${mins ~/ 60}h'
+                            : '${mins}m';
+                        return Text(
+                          label,
+                          style: const TextStyle(
+                            color: Colors.white24,
+                            fontSize: 9,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                ),
+                borderData: FlBorderData(show: false),
+                gridData: FlGridData(
+                  show: true,
+                  horizontalInterval: _yAxisFixed ? 120 : null,
+                  drawVerticalLine: false,
+                  getDrawingHorizontalLine: (value) => FlLine(
+                    color: Colors.white.withValues(alpha: 0.04),
+                    strokeWidth: 1,
+                  ),
+                ),
+                barTouchData: BarTouchData(
+                  enabled: true,
+                  touchTooltipData: BarTouchTooltipData(
+                    getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                      if (groupIndex < 0 ||
+                          groupIndex >= _dailyTotals.length) {
+                        return null;
+                      }
+                      final d = _dailyTotals[groupIndex];
+                      final h = d.duration.inHours;
+                      final m = d.duration.inMinutes.remainder(60);
+                      final timeStr =
+                          h > 0 ? '${h}h${m}m' : '$m分钟';
+                      return BarTooltipItem(
+                        '${d.weekdayLabel}\n$timeStr',
+                        const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // ══════════════════════════════════════════════════

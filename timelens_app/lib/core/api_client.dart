@@ -165,6 +165,48 @@ class AWClient {
     return periodResult.map((e) => AWQueryResult.fromJson(e)).toList();
   }
 
+  /// 获取最近 N 天的每日总时长
+  ///
+  /// 一次请求取全部 events，在 Dart 端按本地日期聚合。
+  /// 返回的列表按日期升序排列（最早在前），无数据的日期不会出现。
+  Future<List<DailyTotal>> getDailyTotals({int days = 7}) async {
+    final bucketId = await findWindowBucketId();
+    if (bucketId == null) return [];
+
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: days - 1));
+
+    final events = await getEvents(
+      bucketId,
+      limit: 5000,
+      start: start,
+      end: now,
+    );
+
+    // 按日期聚合
+    final daily = <DateTime, Duration>{};
+    for (final e in events) {
+      if (e.duration <= 0) continue;
+      final date = DateTime(
+        e.timestamp.year,
+        e.timestamp.month,
+        e.timestamp.day,
+      );
+      daily.update(
+        date,
+        (d) => d + Duration(milliseconds: (e.duration * 1000).round()),
+        ifAbsent: () =>
+            Duration(milliseconds: (e.duration * 1000).round()),
+      );
+    }
+
+    return daily.entries
+        .map((e) => DailyTotal(date: e.key, duration: e.value))
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+  }
+
   /// 健康检查
   Future<bool> isServerRunning() async {
     try {
@@ -174,4 +216,24 @@ class AWClient {
       return false;
     }
   }
+}
+
+/// 单日总时长统计
+class DailyTotal {
+  final DateTime date;
+  final Duration duration;
+
+  const DailyTotal({required this.date, required this.duration});
+
+  /// 总分钟数
+  int get totalMinutes => duration.inMinutes;
+
+  /// 简短日期标签（如 "5/26"）
+  String get shortLabel =>
+      '${date.month}/${date.day}';
+
+  /// 星期标签（如 "周一"）
+  String get weekdayLabel => const [
+        '周一', '周二', '周三', '周四', '周五', '周六', '周日',
+      ][date.weekday - 1];
 }
