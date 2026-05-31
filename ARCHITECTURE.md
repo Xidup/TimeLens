@@ -1,6 +1,6 @@
 # 时光镜 TimeLens — 架构设计文档
 
-> 版本 0.0.1  |  2026-05-30  |  状态：设计完成，准备 Phase 1
+> 版本 0.0.4  |  2026-05-31  |  状态：Phase 1 进行中 (5/11)
 
 ---
 
@@ -510,8 +510,13 @@ Android 手机端数据流：
 ├── Task 1.1  初始化 Flutter 项目 + 依赖配置                [✅ 已完成]
 ├── Task 1.2  AWClient — REST API 对接                     [✅ 已完成]
 ├── Task 1.3  TimerService — 事件驱动计时                    [✅ 已完成]
-├── Task 1.4  Dashboard — 主面板 UI                          [ ]
-├── Task 1.5  OverlayWindow — FPS 透明悬浮窗                 [ ]
+├── Task 1.4  Dashboard — 主面板 UI                          [✅ 已完成]
+│              · 焦点恢复自动刷新 · 连接状态横幅 · 今日摘要卡片
+│              · 应用排行（序号圈+三档阈值色+60min基线进度条）
+│              · 四态：Loading/断开/无数据/已加载 · 过滤自身
+├── Task 1.5  OverlayWindow — FPS 透明悬浮窗                 [✅ 已完成]
+│              · 透明背景（可配 backgroundOpacity 接口）
+│              · 仅文字颜色随阈值变化 · 圆角 6px · 去阈值指示点
 ├── Task 1.6  WindowManager — Mini 模式切换                  [ ]
 ├── Task 1.7  main.dart — 应用入口 + 模式路由                [ ]
 ├── Task 1.8  悬浮窗交互 (拖动/长按锁定/双击/右键菜单)         [ ]
