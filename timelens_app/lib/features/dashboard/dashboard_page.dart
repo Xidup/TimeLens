@@ -98,14 +98,6 @@ class _DashboardPageState extends State<DashboardPage>
   void onWindowEnterFullScreen() {}
   @override
   void onWindowLeaveFullScreen() {}
-  @override
-  void onWindowResized() {}
-  @override
-  void onWindowMoved() {}
-  @override
-  void onWindowEnteredFullScreen() {}
-  @override
-  void onWindowLeftFullScreen() {}
 
   // ── 数据加载 ──────────────────────────────────────
 
@@ -302,7 +294,7 @@ class _DashboardPageState extends State<DashboardPage>
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.hourglass_empty,
-                color: Colors.white.withOpacity(0.15), size: 48),
+                color: Colors.white.withValues(alpha: 0.15), size: 48),
             const SizedBox(height: 16),
             const Text(
               '今日暂无屏幕使用记录',
@@ -359,7 +351,7 @@ class _DashboardPageState extends State<DashboardPage>
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF0F3460).withOpacity(0.25),
+            color: const Color(0xFF0F3460).withValues(alpha: 0.25),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -385,7 +377,7 @@ class _DashboardPageState extends State<DashboardPage>
             width: 32,
             height: 2,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.12),
+              color: Colors.white.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(1),
             ),
           ),
@@ -526,8 +518,8 @@ class _DashboardPageState extends State<DashboardPage>
   Widget _buildRankCircle(int rank, Color color, TimerThreshold threshold) {
     final isTop3 = rank <= 3;
     final bgColor = isTop3
-        ? color.withOpacity(0.2)
-        : Colors.white.withOpacity(0.06);
+        ? color.withValues(alpha: 0.2)
+        : Colors.white.withValues(alpha: 0.06);
 
     return Container(
       width: 28,
@@ -556,10 +548,10 @@ class _DashboardPageState extends State<DashboardPage>
     final h = d.inHours;
     final m = d.inMinutes.remainder(60);
     if (h > 0) {
-      return '${h}h ${m}m';
+      return '$h\x68 $m\x6D';
     }
     if (m > 0) {
-      return '${m} 分钟';
+      return '$m 分钟';
     }
     return '<1 分钟';
   }
@@ -569,10 +561,10 @@ class _DashboardPageState extends State<DashboardPage>
     final h = d.inHours;
     final m = d.inMinutes.remainder(60);
     if (h > 0) {
-      return '${h}h ${m}m';
+      return '$h\x68 $m\x6D';
     }
     if (m > 0) {
-      return '${m}m';
+      return '$m\x6D';
     }
     return '${d.inSeconds}s';
   }

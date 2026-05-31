@@ -7,6 +7,7 @@ library;
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'core/api_client.dart';
 import 'core/timer_service.dart';
@@ -42,18 +43,17 @@ void main() async {
 }
 
 Future<void> _initWindowsWindow() async {
-  final w = await import('package:window_manager/window_manager.dart');
-  await w.windowManager.ensureInitialized();
-  await w.windowManager.waitUntilReadyToShow(
-    const w.WindowOptions(
+  await windowManager.ensureInitialized();
+  await windowManager.waitUntilReadyToShow(
+    const WindowOptions(
       size: Size(400, 700),
       minimumSize: Size(220, 60),
       center: true,
       title: '时光镜',
     ),
     () async {
-      await w.windowManager.show();
-      await w.windowManager.focus();
+      await windowManager.show();
+      await windowManager.focus();
     },
   );
 }
