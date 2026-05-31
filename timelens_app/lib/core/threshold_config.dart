@@ -24,7 +24,7 @@ enum TimerThreshold {
 class ThresholdStep {
   /// 此阶梯的时长上限（不含）
   ///
-  /// 最后一个阶梯可用 [DurationExtension.infinity] 表示无上限。
+  /// 最后一个阶梯可用 [infinity] 表示无上限。
   final Duration maxDuration;
 
   /// 文字颜色
@@ -34,6 +34,26 @@ class ThresholdStep {
     required this.maxDuration,
     required this.textColor,
   });
+
+  /// 序列化为 JSON
+  Map<String, dynamic> toJson() => {
+        'maxDuration': maxDuration == infinity
+            ? -1
+            : maxDuration.inSeconds,
+        'textColor': textColor.toARGB32(),
+      };
+
+  /// 从 JSON 反序列化
+  factory ThresholdStep.fromJson(Map<String, dynamic> json) {
+    final seconds = json['maxDuration'] as int;
+    return ThresholdStep(
+      maxDuration: seconds == -1 ? infinity : Duration(seconds: seconds),
+      textColor: Color(json['textColor'] as int),
+    );
+  }
+
+  /// 无上限哨兵值
+  static const infinity = Duration(days: 9999);
 }
 
 /// 每应用阈值配置
@@ -52,6 +72,22 @@ class AppThresholdConfig {
     required this.appPattern,
     required this.steps,
   });
+
+  /// 序列化为 JSON
+  Map<String, dynamic> toJson() => {
+        'appPattern': appPattern,
+        'steps': steps.map((s) => s.toJson()).toList(),
+      };
+
+  /// 从 JSON 反序列化
+  factory AppThresholdConfig.fromJson(Map<String, dynamic> json) {
+    return AppThresholdConfig(
+      appPattern: json['appPattern'] as String,
+      steps: (json['steps'] as List)
+          .map((s) => ThresholdStep.fromJson(s as Map<String, dynamic>))
+          .toList(),
+    );
+  }
 
   /// 判断此规则是否匹配给定应用名
   bool matches(String appName) {
@@ -107,7 +143,7 @@ class AppThresholdConfig {
             textColor: Color(0xFFF9A825), // Yellow 600
           ),
           ThresholdStep(
-            maxDuration: _infinityDuration,
+            maxDuration: ThresholdStep.infinity,
             textColor: Color(0xFFEF5350), // Red 400
           ),
         ],
@@ -136,7 +172,4 @@ class AppThresholdConfig {
     // 兜底（不应到达）
     return defaultRule;
   }
-
-  /// 表示"无上限"的内部哨兵值
-  static const _infinityDuration = Duration(days: 9999);
 }

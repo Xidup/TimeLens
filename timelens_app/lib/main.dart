@@ -22,6 +22,7 @@ import 'package:tray_manager/tray_manager.dart';
 
 import 'core/api_client.dart';
 import 'core/timer_service.dart';
+import 'core/threshold_store.dart';
 import 'core/window_manager.dart' as wm;
 import 'features/dashboard/dashboard_page.dart';
 import 'features/overlay/overlay_window.dart';
@@ -42,7 +43,8 @@ void main() async {
 
   // 初始化服务
   final client = AWClient();
-  final timerService = TimerService(client: client);
+  final configs = ThresholdStore.load();
+  final timerService = TimerService(client: client, configs: configs);
 
   // 检查 aw-server 是否运行（用于初始 UI 状态）
   final serverRunning = await client.isServerRunning();
@@ -55,6 +57,7 @@ void main() async {
     timerService: timerService,
     windowManager: windowMgr,
     initialServerRunning: serverRunning,
+    thresholdConfigs: configs,
   ));
 }
 
@@ -160,6 +163,7 @@ class TimeLensApp extends StatefulWidget {
   final TimerService timerService;
   final wm.TimeLensWindowManager windowManager;
   final bool initialServerRunning;
+  final List<AppThresholdConfig> thresholdConfigs;
 
   const TimeLensApp({
     super.key,
@@ -167,6 +171,7 @@ class TimeLensApp extends StatefulWidget {
     required this.timerService,
     required this.windowManager,
     required this.initialServerRunning,
+    required this.thresholdConfigs,
   });
 
   @override
@@ -258,8 +263,16 @@ class _TimeLensAppState extends State<TimeLensApp> {
     return DashboardPage(
       client: widget.client,
       initialServerRunning: widget.initialServerRunning,
+      thresholdConfigs: widget.thresholdConfigs,
       onToggleMini: _switchToMini,
+      onConfigsChanged: _onConfigsChanged,
     );
+  }
+
+  /// 配置变更 → 持久化 + 通知 TimerService
+  void _onConfigsChanged(List<AppThresholdConfig> newConfigs) {
+    ThresholdStore.save(newConfigs);
+    widget.timerService.updateConfigs(newConfigs);
   }
 
   // ── 模式切换方法 ───────────────────────────────────

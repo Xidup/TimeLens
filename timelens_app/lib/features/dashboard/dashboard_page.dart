@@ -45,11 +45,19 @@ class DashboardPage extends StatefulWidget {
   /// 初始服务器连接状态（由 main.dart 在启动时检测）
   final bool initialServerRunning;
 
+  /// 阈值配置列表（可读写）
+  final List<AppThresholdConfig> thresholdConfigs;
+
+  /// 配置变更回调 → 持久化 + 通知 TimerService
+  final ValueChanged<List<AppThresholdConfig>>? onConfigsChanged;
+
   const DashboardPage({
     super.key,
     required this.client,
     this.onToggleMini,
     this.initialServerRunning = true,
+    required this.thresholdConfigs,
+    this.onConfigsChanged,
   });
 
   @override
@@ -65,7 +73,11 @@ class _DashboardPageState extends State<DashboardPage>
   bool _loading = true;
 
   // ── 阈值配置 ──────────────────────────────────────
-  final _thresholdConfigs = AppThresholdConfig.defaults;
+  // 使用父组件传入的配置（支持运行时修改 + 持久化）
+  late List<AppThresholdConfig> _thresholdConfigs;
+
+  // ── 设置面板 ──────────────────────────────────────
+  bool _showThresholdPanel = false;
 
   @override
   void initState() {
@@ -73,6 +85,7 @@ class _DashboardPageState extends State<DashboardPage>
     if (Platform.isWindows) {
       windowManager.addListener(this);
     }
+    _thresholdConfigs = widget.thresholdConfigs;
 
     // 已知服务器未运行 → 直接显示断开状态，不闪"加载中"
     if (!widget.initialServerRunning) {
@@ -337,6 +350,8 @@ class _DashboardPageState extends State<DashboardPage>
           _buildSectionHeader(),
           const SizedBox(height: 10),
           ..._apps.map(_buildAppTile),
+          const SizedBox(height: 16),
+          _buildThresholdPanel(),
         ],
       ),
     );
@@ -590,5 +605,493 @@ class _DashboardPageState extends State<DashboardPage>
     if (diff.inSeconds < 60) return '${diff.inSeconds}秒前';
     if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
     return '${diff.inHours}小时前';
+  }
+
+  // ══════════════════════════════════════════════════
+  // 应用阈值设置面板
+  // ══════════════════════════════════════════════════
+
+  Widget _buildThresholdPanel() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF16213E),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          // ── 面板标题（可折叠） ──
+          InkWell(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+            onTap: () => setState(() => _showThresholdPanel = !_showThresholdPanel),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(Icons.tune, color: Colors.white54, size: 16),
+                  const SizedBox(width: 8),
+                  const Text(
+                    '应用阈值',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    _showThresholdPanel
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                    color: Colors.white30,
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── 展开内容 ──
+          if (_showThresholdPanel) ...[
+            const Divider(height: 1, color: Color(0xFF1A1A2E)),
+            // 应用列表
+            ..._apps.map((app) => _buildThresholdRow(app)),
+            // 底部操作
+            const Divider(height: 1, color: Color(0xFF1A1A2E)),
+            InkWell(
+              borderRadius:
+                  const BorderRadius.vertical(bottom: Radius.circular(10)),
+              onTap: () => _showAddRuleDialog(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.add_circle_outline,
+                        color: Colors.white.withValues(alpha: 0.4), size: 18),
+                    const SizedBox(width: 6),
+                    Text(
+                      '添加规则',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.45),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 单个应用的阈值行
+  Widget _buildThresholdRow(AppUsage app) {
+    final config = AppThresholdConfig.find(_thresholdConfigs, app.appName);
+    final isCustom =
+        config.appPattern != '*' && config.matches(app.appName);
+    final steps = config.steps;
+
+    // 阈值摘要文本
+    String summary;
+    if (steps.length >= 3) {
+      final g = steps[0].maxDuration.inMinutes;
+      final y = steps[1].maxDuration.inMinutes;
+      summary = '绿≤$g 黄≤$y 红>$y';
+    } else {
+      summary = '默认规则';
+    }
+
+    return InkWell(
+      onTap: () => _showEditDialog(app.appName, config),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          children: [
+            // 应用名
+            Expanded(
+              child: Text(
+                app.appName,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            // 阈值摘要 + 颜色预览
+            _buildColorPreview(steps),
+            const SizedBox(width: 6),
+            Text(
+              summary,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.35),
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(width: 6),
+            // 操作图标
+            Icon(
+              isCustom ? Icons.edit : Icons.add_circle_outline,
+              color: isCustom
+                  ? Colors.white.withValues(alpha: 0.4)
+                  : const Color(0xFF66BB6A).withValues(alpha: 0.5),
+              size: 16,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 颜色预览（三个色块）
+  Widget _buildColorPreview(List<ThresholdStep> steps) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: steps.take(3).map((s) {
+        return Container(
+          width: 8,
+          height: 8,
+          margin: const EdgeInsets.symmetric(horizontal: 1),
+          decoration: BoxDecoration(
+            color: s.textColor,
+            shape: BoxShape.circle,
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // ══════════════════════════════════════════════════
+  // 阈值编辑对话框
+  // ══════════════════════════════════════════════════
+
+  /// 编辑应用阈值（弹窗）
+  void _showEditDialog(String appName, AppThresholdConfig currentConfig) {
+    final steps = currentConfig.steps.map((s) => s).toList();
+    // 取前两个阶梯的分钟数作为可编辑值
+    int greenToYellow = steps.isNotEmpty
+        ? steps[0].maxDuration.inMinutes
+        : 30;
+    int yellowToRed = steps.length >= 2
+        ? steps[1].maxDuration.inMinutes
+        : 60;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1A1A2E),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+              title: Row(
+                children: [
+                  const Icon(Icons.tune, color: Colors.white70, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    appName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white30, size: 18),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
+                ],
+              ),
+              titlePadding:
+                  const EdgeInsets.fromLTRB(20, 18, 12, 0),
+              content: SizedBox(
+                width: 300,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── 绿→黄 阈值 ──
+                    _buildSliderRow(
+                      label: '绿 → 黄',
+                      color: steps[0].textColor,
+                      value: greenToYellow,
+                      max: 180,
+                      onChanged: (v) => setDialogState(() => greenToYellow = v),
+                    ),
+                    const SizedBox(height: 16),
+                    // ── 黄→红 阈值 ──
+                    _buildSliderRow(
+                      label: '黄 → 红',
+                      color: steps.length >= 2
+                          ? steps[1].textColor
+                          : const Color(0xFFF9A825),
+                      value: yellowToRed,
+                      max: 480,
+                      onChanged: (v) => setDialogState(() => yellowToRed = v),
+                    ),
+                    const SizedBox(height: 20),
+                    // ── 颜色预览 ──
+                    Text(
+                      '预览:  00:${greenToYellow.toString().padLeft(2, '0')}  '
+                      '${yellowToRed.toString().padLeft(2, '0')}:00  '
+                      '${(yellowToRed + 1).toString().padLeft(2, '0')}:00',
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        _buildPreviewBlock(steps[0].textColor, '$greenToYellow min', greenToYellow),
+                        _buildPreviewBlock(
+                          steps.length >= 2
+                              ? steps[1].textColor
+                              : const Color(0xFFF9A825),
+                          '${yellowToRed - greenToYellow} min',
+                          yellowToRed - greenToYellow,
+                        ),
+                        _buildPreviewBlock(
+                          steps.length >= 3
+                              ? steps[2].textColor
+                              : const Color(0xFFEF5350),
+                          '>$yellowToRed min',
+                          0,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    // ── 按钮 ──
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // 恢复默认
+                        TextButton(
+                          onPressed: () {
+                            _removeCustomRule(appName);
+                            Navigator.of(ctx).pop();
+                          },
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white38,
+                          ),
+                          child: const Text('恢复默认', style: TextStyle(fontSize: 12)),
+                        ),
+                        // 保存
+                        FilledButton(
+                          onPressed: () {
+                            _saveCustomRule(
+                              appName,
+                              greenToYellow,
+                              yellowToRed,
+                            );
+                            Navigator.of(ctx).pop();
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF0F3460),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: const Text('保存', style: TextStyle(fontSize: 13)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// 滑块行
+  Widget _buildSliderRow({
+    required String label,
+    required Color color,
+    required int value,
+    required int max,
+    required ValueChanged<int> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            Text(
+              '$value 分钟',
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+          ],
+        ),
+        SliderTheme(
+          data: SliderThemeData(
+            trackHeight: 4,
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+            activeTrackColor: color,
+            inactiveTrackColor: Colors.white.withValues(alpha: 0.08),
+            thumbColor: color,
+            overlayColor: color.withValues(alpha: 0.15),
+          ),
+          child: Slider(
+            value: value.toDouble(),
+            min: 5,
+            max: max.toDouble(),
+            divisions: max ~/ 5,
+            onChanged: (v) => onChanged(v.round()),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 颜色预览块
+  Widget _buildPreviewBlock(Color color, String label, int width) {
+    return Expanded(
+      child: Container(
+        height: 28,
+        margin: const EdgeInsets.only(right: 3),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+
+  /// 保存自定义规则
+  void _saveCustomRule(String appName, int greenToYellow, int yellowToRed) {
+    // 移除该应用的现有自定义规则
+    _thresholdConfigs.removeWhere(
+      (c) => c.appPattern != '*' && c.matches(appName),
+    );
+
+    // 添加新规则
+    final defaultSteps = AppThresholdConfig.defaultRule.steps;
+    _thresholdConfigs.add(AppThresholdConfig(
+      appPattern: appName,
+      steps: [
+        ThresholdStep(
+          maxDuration: Duration(minutes: greenToYellow),
+          textColor: defaultSteps[0].textColor,
+        ),
+        ThresholdStep(
+          maxDuration: Duration(minutes: yellowToRed),
+          textColor: defaultSteps[1].textColor,
+        ),
+        ThresholdStep(
+          maxDuration: ThresholdStep.infinity,
+          textColor: defaultSteps[2].textColor,
+        ),
+      ],
+    ));
+
+    // 确保默认规则在末尾
+    _ensureDefaultLast();
+    _notifyConfigChanged();
+  }
+
+  /// 移除自定义规则（恢复默认）
+  void _removeCustomRule(String appName) {
+    _thresholdConfigs.removeWhere(
+      (c) => c.appPattern != '*' && c.matches(appName),
+    );
+    _notifyConfigChanged();
+  }
+
+  /// 添加规则对话框 — 从今日应用列表中选择
+  void _showAddRuleDialog() {
+    // 过滤出尚未有自定义规则的应用
+    final customApps = _thresholdConfigs
+        .where((c) => c.appPattern != '*')
+        .map((c) => c.appPattern.toLowerCase())
+        .toSet();
+    final uncustomizedApps =
+        _apps.where((a) => !customApps.contains(a.appName.toLowerCase()));
+
+    if (uncustomizedApps.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('今日所有应用已有自定义规则'),
+          backgroundColor: Color(0xFF16213E),
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          title: const Text(
+            '选择应用',
+            style: TextStyle(color: Colors.white, fontSize: 15),
+          ),
+          content: SizedBox(
+            width: 260,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: uncustomizedApps.take(8).map((app) {
+                return ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(
+                    app.appName,
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
+                  trailing: const Icon(Icons.add, color: Colors.white30, size: 18),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    final defaultConfig =
+                        AppThresholdConfig.find(_thresholdConfigs, app.appName);
+                    _showEditDialog(app.appName, defaultConfig);
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 确保默认规则（'*'）在列表末尾
+  void _ensureDefaultLast() {
+    final defaultIdx =
+        _thresholdConfigs.indexWhere((c) => c.appPattern == '*');
+    if (defaultIdx >= 0 && defaultIdx != _thresholdConfigs.length - 1) {
+      final defaultConfig = _thresholdConfigs.removeAt(defaultIdx);
+      _thresholdConfigs.add(defaultConfig);
+    }
+  }
+
+  /// 通知父组件配置变更 → 持久化 + 更新 TimerService
+  void _notifyConfigChanged() {
+    setState(() {}); // 刷新阈值颜色
+    widget.onConfigsChanged?.call(List.of(_thresholdConfigs));
   }
 }

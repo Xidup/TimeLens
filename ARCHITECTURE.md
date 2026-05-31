@@ -1,6 +1,6 @@
 # 时光镜 TimeLens — 架构设计文档
 
-> 版本 0.0.7  |  2026-05-31  |  状态：Phase 1 进行中 (8/11)
+> 版本 0.0.8  |  2026-05-31  |  状态：Phase 1 进行中 (9/11)
 
 ---
 
@@ -533,7 +533,13 @@ Android 手机端数据流：
 │              · 系统托盘菜单（打开面板、切换位置、退出）
 │              · 四角位置可配（默认左下角）
 │              · tray_manager 集成
-├── Task 1.9  每应用阈值配置 (AppThresholdConfig + 设置UI)    [ ]
+├── Task 1.9  每应用阈值配置 (AppThresholdConfig + 设置UI)    [✅ 已完成]
+│              · JSON 持久化（ThresholdStore → %APPDATA%/TimeLens/）
+│              · 数据模型序列化（toJson/fromJson）
+│              · Dashboard 内嵌可折叠设置面板
+│              · 滑块编辑对话框（绿→黄/黄→红 双阈值）
+│              · 颜色预览 + 添加/恢复默认规则
+│              · TimerService.updateConfigs() 运行时更新
 ├── Task 1.10 Dashboard 图表 (fl_chart 饼图 + 柱状图)         [ ]
 └── Task 1.11 真机调试 + 与 aw-server 联调                   [ ]
 ```

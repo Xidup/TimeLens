@@ -73,8 +73,8 @@ class TimerService {
   /// 暂停标志（桌面/锁屏时由 UI 层设置）
   bool _paused = false;
 
-  /// 阈值规则列表
-  final List<AppThresholdConfig> _configs;
+  /// 阈值规则列表（运行时可变）
+  List<AppThresholdConfig> _configs;
 
   // ── 定时器 ────────────────────────────────────────
 
@@ -124,7 +124,12 @@ class TimerService {
   }
 
   /// 当前阈值配置列表（Task 1.9 配置 UI 读写）
-  List<AppThresholdConfig> get configs => List.unmodifiable(_configs);
+  List<AppThresholdConfig> get configs => _configs;
+
+  /// 更新阈值配置（设置面板保存时调用）
+  void updateConfigs(List<AppThresholdConfig> newConfigs) {
+    _configs = newConfigs;
+  }
 
   // ── 生命周期 ──────────────────────────────────────
 
